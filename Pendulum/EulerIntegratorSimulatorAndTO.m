@@ -1,0 +1,186 @@
+clear all; close all ;clc;
+
+%% Simulation Settings
+N = 2; % number of bodies
+T_end = 1; % simulation end time
+T = 0.100000; % Time interval
+% T_list = [0.5 0.3 0.2 0.1 0.06 0.05 0.04 0.03 0.02 0.01 0.008 0.006 0.005 0.004 0.003 0.002];
+T_list = [0.2 0.1 0.05 0.02 0.01 0.008 0.005 0.002];
+loss_list = [];
+
+%% Dynamics setting
+m = [5;5]; % mass of links
+L = [1;1]; % length of links
+r = [1;1]; % position of the COM of each link
+J = [m(1)*(L(1)^2+0.2^2)/36; m(2)*(L(2)^2+0.2^2)/36]; % Inertia
+g = 9.8;
+
+%% Initialize
+time = zeros(1,T_end/T);
+M = zeros(2,2*T_end/T); % Mass matrix
+C = zeros(2,2*T_end/T); % C&C matrix 
+G = zeros(2,T_end/T); % Gravity vector
+U = zeros(T_end/T,1); % Torque input vector. [u1]
+
+% initial conditions, q(-1) and q(0)
+q_0 = [pi/2;0]; % initial condition q(0)
+q_m = [pi/2;0]; % initial condition q(-1) -> v(0) = 0
+
+%% Simulation setting
+simul = true;
+
+%% TO
+if simul == true
+    if ~exist('./transfer_euler/', 'dir')
+       mkdir('./transfer_euler/')
+    end
+    T_simul = 0.0001;
+    U_simul = zeros(T_end/T_simul,1);
+    for j = 1:length(T_list)
+        T = T_list(j);
+        load(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T, T_end), 'U');
+        % load(sprintf('./inputs_euler/U_%f.mat', T), 'U');
+        for i = 1:T_end/T
+            U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) ;%* T_simul/T;
+        end
+        q_obj = zeros(2*T_end/T_simul,1); % Target
+        [qf, ~, ~, ~] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
+        loss = norm(qf(2*T_end/T_simul-1:2*T_end/T_simul) - q_obj(2*T_end/T_simul-1:2*T_end/T_simul));
+        % save(sprintf('./transfer_euler/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
+        % save(sprintf('./transfer_euler/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
+        save(sprintf('./transfer_euler/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
+        save(sprintf('./transfer_euler/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
+        loss_list = [loss_list, loss];
+    end
+else
+    if ~exist('./inputs_euler/', 'dir')
+       mkdir('./inputs_euler/')
+    end
+    for j = 1: length(T_list)
+        tic
+        U = zeros(T_end/T_list(j),1); % Torque input vector. [u1]
+        q_obj = zeros(2*T_end/T_list(j),1); % Target
+        options = optimoptions('fminunc', 'MaxFunctionEvaluations', 200000, 'display', 'off');
+        U = fminunc(@(U)ObjFunc(U, q_0, q_m,q_obj,r, m, L, g, J, T_list(j), T_end), U,options);
+        U_simul = U;
+        T_simul = T_list(j);
+        save(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T_list(j), T_end), 'U');
+        [qf, ~, ~, ~] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
+        toc
+        fprintf("TO done for h = %f\n", T_list(j));
+    end
+end
+
+T = T_simul;
+%% Plot
+t = T:T:T_end;
+plot(t, qf(1:2:2*T_end/T-1));
+hold on;
+plot(t, q_obj(1:2:2*T_end/T-1));
+xlabel('time, [s]');
+ylabel('angle, [rad]');
+title('q_1');
+legend('real', 'target');
+figure(2)
+plot(t, qf(2:2:2*T_end/T));
+hold on;
+plot(t, q_obj(2:2:2*T_end/T));
+xlabel('time, [s]');
+ylabel('angle, [rad]');
+title('q_2');
+legend('real', 'target');
+
+v = VideoWriter(sprintf('Euler_%f_simultime_%f.avi', T, T_simul));
+open(v);
+for k = T_end/T /20:T_end/T /20 :T_end/T
+    figure(3)
+    q1 = qf(2*k-1);
+    q2 = qf(2*k);
+    x = zeros(2, 3);
+    x(:, 2) = L(1)*[sin(q1); -cos(q1)];
+    x(:, 3) = x(:, 2) + L(2)*[sin(q1+q2); -cos(q1+q2)];
+
+    clf;
+    plot(x(1, :), x(2, :), 'o-');
+    axis equal;
+    xlim([-1, 1]);
+    ylim([-2.5,2.5]);
+    drawnow;
+   frame = getframe(gcf);
+   writeVideo(v,frame);
+end
+close(v);
+
+figure(4)
+semilogx(T_list, loss_list);
+xlabel("time step size, [s]");
+ylabel("loss");
+title('Euler integration');
+save('./transfer_Euler/loss_list_Euler', 'loss_list');
+save('./transfer_Euler/T_list_Euler', 'T_list');
+
+%% Functions
+function [q, M, C, G] = forward(q_0,q_m, r, U, m, L, g, J, T, T_end)
+            % Forward simulation
+    q = zeros(2*T_end/T,1);
+    for k = 1:T_end/T
+        if k == 1
+            q(2*k-1:2*k) = solve_dynamics(q_0, q_m,r, [U(k);0], m, L, g, J, T);
+        elseif k == 2
+            q(2*k-1:2*k) = solve_dynamics(q(2*k-3:2*k-2), q_0, r, [U(k);0], m, L, g, J, T);
+        else
+            q(2*k-1:2*k) = solve_dynamics(q(2*k-3:2*k-2), q(2*k-5:2*k-4),r, [U(k);0], m, L, g,J, T);
+        end
+    % Calculate dynamics matrices
+        M(:, 2*k-1:2*k) = Mass(q(2*k-1:2*k),r, m, L, J);
+        if k == 1
+            C(:, 2*k-1:2*k) = Cori(q(2*k-1:2*k), (q(2*k-1:2*k)-q_0)/T,r,  m, L);
+        else
+            C(:, 2*k-1:2*k) = Cori(q(2*k-1:2*k), (q(2*k-1:2*k) - q(2*k-3:2*k-2))/T, r, m, L);
+        end 
+        G(:, k) = Grav(q(2*k-1:2*k),r, m, L, g);
+    end
+end
+
+function f = ObjFunc(U, q_0, q_m, q_obj,r, m, L, g, J, T, T_end) % objective function without gradient
+    % Calculate objective
+    % Forward simulation
+    if T <= 0.001
+        U_use = zeros(T_end / T, 1);
+        for i = 1:T_end/0.002
+          U_use((0.002/T * (i-1)+1) : (0.002/T*i) ) =  U(i);
+          [q, ~,~,~] = forward(q_0, q_m,r, U_use, m, L, g, J, T, T_end);
+        end
+    else
+        [q, ~,~,~] = forward(q_0, q_m,r, U, m, L, g, J, T, T_end);
+    end
+    f = norm(q(2*T_end/T-1:2*T_end/T) - q_obj(2*T_end/T-1:2*T_end/T));
+end
+
+function solve = solve_dynamics(q_0_, q_m_,r_, u_, m_, L_, g_, J_, T_) % Forward simulation works well
+    m = Mass(q_0_,r_, m_, L_, J_);
+    c = Cori(q_0_, (q_0_-q_m_)/T_,r_, m_, L_);
+    dg = dg_dq(q_0_, r_,m_, L_, g_);
+    solve = q_0_ + (m/T_+c+dg*T_)\(u_+m*(q_0_-q_m_)/T_^2 - Grav(q_0_, r_, m_, L_, g_))*T_;
+    % solve =  (m/T_^2 + c/T_ )\(u_+(2*m/T_^2 + c/T_)*q_0_-m/T_^2*q_m_-Grav(q_0_,r_, m_, L_, g_));
+end
+
+function v = Grav(q_,r_, m_, L_, g_) % Gravity vector
+    v = [m_(1)*g_*r_(1)*L_(1)*sin(q_(1))+m_(2)*g_*L_(1)*sin(q_(1))+m_(2)*g_*r_(2)*L_(2)*sin(q_(1)+q_(2));
+        m_(2)*g_*r_(2)*L_(2)*sin(q_(1)+q_(2))];
+end
+
+function m = Mass(q_,r_, m_, L_, J_) % mass matrix
+    m = [m_(1)*r_(1)^2*L_(1)^2+m_(2)*r_(2)^2*L_(2)^2+m_(2)*L_(1)^2+2*m_(2)*r_(2)*L_(1)*L_(2)*cos(q_(2)), m_(2)*(r_(2)^2*L_(2)^2+r_(2)*L_(1)*L_(2)*cos(q_(2)));
+        m_(2)*(r_(2)^2*L_(2)^2+r_(2)*L_(1)*L_(2)*cos(q_(2))), m_(2)*r_(2)^2*L_(2)^2] + [J_(1)+J_(2), J_(2); J_(2), J_(2)];
+end
+
+function c = Cori(q_, v_, r_, m_, L_) % C&C matrix
+    c= [-m_(2)*r_(2)*L_(1)*L_(2)*sin(q_(2))*v_(2), -m_(2)*r_(2)*L_(1)*L_(2)*sin(q_(2))*v_(1)-m_(2)*r_(2)*L_(1)*L_(2)*sin(q_(2))*v_(2);
+        m_(2)*r_(2)*L_(1)*L_(2)*sin(q_(2))*v_(1), 0];
+end
+
+function dg = dg_dq(q_,r_, m_, L_, g_) % Jacobian of the gravity vector
+    dg = [m_(1)*g_*L_(1)*cos(q_(1))*r_(1)+m_(2)*g_*L_(1)*cos(q_(1))+m_(2)*g_*L_(2)*cos(q_(1)+q_(2))*r_(2), m_(2)*g_*L_(2)*cos(q_(1)+q_(2))*r_(2);
+           m_(2)*g_*L_(2)*cos(q_(1)+q_(2))*r_(2), m_(2)*g_*L_(2)*cos(q_(1)+q_(2))*r_(2)];
+end
