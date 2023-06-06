@@ -1,0 +1,355 @@
+clear all; close all; clc;
+
+N = 2; % number of bodies
+T_end = 5; % simulation end time
+T_list = [0.1 0.05 0.02 0.01 0.008 0.005 0.002]; % time intervals
+loss_list = [];
+
+T_test = 0.01;
+m = [5;1];
+g = 9.8;
+L = 0.5;
+J = 1/2*m(2)*0.1^2;
+
+%% Initialize
+% initial conditions, q(-1) and q(0)
+q_0 = [0;pi+1e-2]; % initial condition q(0)
+q_m = [0;pi+1e-2]; % initial condition q(-1) -> v(0) = 0
+
+%% Simulation setting
+simul = false;
+test = false;
+video = true;
+fig = false;
+%% TO
+if test
+    U_simul = zeros(2*T_end/T_test, 1);
+    T_simul = T_test;
+    q_obj = zeros(2*T_end/T_simul,1); % Targe
+    [qf, M, C, G] = forward(q_0,q_m, U_simul, m, L, g, J, T_simul, T_end);
+else
+    q_target = [0; pi];
+    if simul == true
+        if ~exist('./transfer_euler_hold/', 'dir')
+           mkdir('./transfer_euler_hold/')
+        end
+        T_simul = 0.0001;
+        U_simul = zeros(T_end/T_simul,1);
+        for j = 1:length(T_list)
+            tic
+            T = T_list(j);
+            load(sprintf('./inputs_euler_hold/U_%f_endtime_%f.mat', T, T_end), 'U');
+            for i = 1:T_end/T
+                U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) ;%* T_simul/T;
+            end
+            qf = forward(q_0, q_m, U_simul, m, L, g, J, T_simul, T_end);
+            loss = norm(qf(2:2:end) - q_target(2)*ones(length(qf)/2))^2;
+            save(sprintf('./transfer_euler_hold/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
+            save(sprintf('./transfer_euler_hold/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
+            loss_list = [loss_list, loss];
+            toc
+            fprintf("Simulation done for h = %f\n", T_list(j));
+            
+            scale = (T_end/T_simul)/100;
+            t = T_simul*scale:T_simul*scale:T_end;
+            if (fig) 
+                figure(3*j-2);
+            else
+                figure('visible','off');
+            end
+            plot(t, qf(2*scale-1:2*scale:2*T_end/T_simul-1));
+            hold on;
+            plot(t, q_target(1) * ones(length(t)));
+            xlabel('time, [s]');
+            ylabel('angle, [rad]');
+            title('q_1');
+            legend('real', 'target');
+            saveas(gcf, sprintf('./transfer_euler_hold/q1_%f_endtime_%f.jpg', T, T_end));
+            if (fig) 
+                figure(3*j-1);
+            else
+                figure('visible','off');
+            end
+            plot(t, qf(2*scale:2*scale:2*T_end/T_simul));
+            hold on;
+            plot(t, q_target(2) * ones(length(t)));
+            xlabel('time, [s]');
+            ylabel('angle, [rad]');
+            title('q_2');
+            legend('real', 'target');
+            saveas(gcf, sprintf('./transfer_euler_hold/q2_%f_endtime_%f.jpg', T, T_end))
+            if (video)
+                v = VideoWriter(sprintf('./inputs_euler_hold/video_%f_endtime_%f.avi', T_simul, T_end));
+                open(v);
+                for k = scale : scale :T_end/T_simul
+                    figure(3*j)
+                    q1 = qf(2*k-1);
+                    q2 = qf(2*k);
+                    x = zeros(2, 2);
+                    x(:, 1) = [q1 ; 0];
+                    x(:, 2) = x(:, 1) + L*[sin(q2); -cos(q2)];
+                
+                    clf;
+                    plot(x(1, :), x(2, :), 'o-');
+                    hold on;
+                    plot(x(1, 1), x(2, 1), 'square');
+                    hold on;
+                    plot([-1,1], [0,0], '-');
+                    axis equal;
+                    xlim([-1, 1]);
+                    ylim([-1,1]);
+                    drawnow;
+                    frame = getframe(gcf);
+                    writeVideo(v, frame);
+                end
+                close(v);
+            end
+        end
+    else
+        if ~exist('./inputs_euler_hold/', 'dir')
+           mkdir('./inputs_euler_hold/')
+        end
+        for j = 1: length(T_list)
+            tic
+            U = zeros(T_end/T_list(j),1); % Torque input vector. [u1]
+            options = optimoptions('fminunc', 'MaxFunctionEvaluations', 200000, 'display', 'off');
+            U = fminunc(@(U)ObjFunc(U, q_0, q_m,q_target, m, L, g, J, T_list(j), T_end), U,options);
+            U_simul = U;
+            T_simul = T_list(j);
+            save(sprintf('./inputs_euler_hold/U_%f_endtime_%f.mat', T_list(j), T_end), 'U');
+            [qf, ~, ~, ~] = forward(q_0,q_m, U_simul, m, L, g, J, T_simul, T_end);
+            toc
+            fprintf("TO done for h = %f\n", T_list(j));
+            
+            scale = (T_end/T_simul)/10;
+            t = T_simul*scale:T_simul*scale:T_end;
+            if (fig) 
+                figure(3*j-2);
+            else
+                figure('visible','off');
+            end
+            plot(t, qf(2*scale-1:2*scale:2*T_end/T_simul-1));
+            hold on;
+            plot(t, q_target(1) * ones(length(t)));
+            xlabel('time, [s]');
+            ylabel('angle, [rad]');
+            title('q_1');
+            legend('real', 'target');
+            saveas(gcf, sprintf('./inputs_euler_hold/q1_%f_endtime_%f.jpg', T_simul, T_end));
+            if (fig) 
+                figure(3*j-1);
+            else
+                figure('visible','off');
+            end
+            plot(t, qf(2*scale:2*scale:2*T_end/T_simul));
+            hold on;
+            plot(t, q_target(2) * ones(length(t)));
+            xlabel('time, [s]');
+            ylabel('angle, [rad]');
+            title('q_2');
+            legend('real', 'target');
+            saveas(gcf, sprintf('./inputs_euler_hold/q2_%f_endtime_%f.jpg', T_simul, T_end))
+            if (video)
+                v = VideoWriter(sprintf('./inputs_euler_hold/video_%f_endtime_%f.avi', T_simul, T_end));
+                open(v);
+                for k = scale : scale :T_end/T_simul
+                    figure(3*j)
+                    q1 = qf(2*k-1);
+                    q2 = qf(2*k);
+                    x = zeros(2, 2);
+                    x(:, 1) = [q1 ; 0];
+                    x(:, 2) = x(:, 1) + L*[sin(q2); -cos(q2)];
+                
+                    clf;
+                    plot(x(1, :), x(2, :), 'o-');
+                    hold on;
+                    plot(x(1, 1), x(2, 1), 'square');
+                    hold on;
+                    plot([-1,1], [0,0], '-');
+                    axis equal;
+                    xlim([-1, 1]);
+                    ylim([-1,1]);
+                    drawnow;
+                    frame = getframe(gcf);
+                    writeVideo(v, frame);
+                end
+                close(v);
+            end
+        end
+    end
+end
+
+T = T_simul;
+%% Plot
+
+if test
+    t = T_test:T_test:T_end;
+    plot(t, qf(1:2:2*T_end/T_test-1));
+    hold on;
+    plot(t, q_obj(1:2:2*T_end/T_test-1));
+    xlabel('time, [s]');
+    ylabel('angle, [rad]');
+    title('q_1');
+    legend('real', 'target');
+    figure(2)
+    plot(t, qf(2:2:2*T_end/T_test));
+    hold on;
+    plot(t, q_obj(2:2:2*T_end/T_test));
+    xlabel('time, [s]');
+    ylabel('angle, [rad]');
+    title('q_2');
+    legend('real', 'target');
+    
+    v = VideoWriter(sprintf('euler_hold_%f_simultime_%f.avi', T_test, T_simul));
+    open(v);
+    for k = T_end/T_test /100:T_end/T_test /100 :T_end/T_test
+        figure(3)
+        q1 = qf(2*k-1);
+        q2 = qf(2*k);
+        x = zeros(2, 2);
+        x(:, 1) = [q1 ; 0];
+        x(:, 2) = x(:, 1) + L*[sin(q2); -cos(q2)];
+    
+        clf;
+        plot(x(1, :), x(2, :), 'o-');
+        hold on;
+        plot(x(1, 1), x(2, 1), 'square');
+        hold on;
+        plot([-10,10], [0,0], '-');
+        axis equal;
+        xlim([-2, 2]);
+        ylim([-1,1]);
+        drawnow;
+       frame = getframe(gcf);
+       writeVideo(v,frame);
+    end
+    close(v);
+elseif (simul)
+        figure(3*length(T_list)+1)
+        semilogx(T_list, loss_list);
+        xlabel("time step size, [s]");
+        ylabel("loss");
+        title('euler integration');
+        save('./transfer_euler_hold/loss_list_euler_hold', 'loss_list');
+        save('./transfer_euler_hold/T_list_euler_hold', 'T_list');
+end
+
+T = T_simul;
+%% Plot
+if test
+    t = T:T:T_end;
+    plot(t, qf(1:2:2*T_end/T-1));
+    hold on;
+    plot(t, q_obj(1:2:2*T_end/T-1));
+    xlabel('time, [s]');
+    ylabel('angle, [rad]');
+    title('q_1');
+    legend('real', 'target');
+    figure(2)
+    plot(t, qf(2:2:2*T_end/T));
+    hold on;
+    plot(t, q_obj(2:2:2*T_end/T));
+    xlabel('time, [s]');
+    ylabel('angle, [rad]');
+    title('q_2');
+    legend('real', 'target');
+    
+    v = VideoWriter(sprintf('Euler_%f_simultime_%f.avi', T, T_simul));
+    open(v);
+    for k = T_end/T /100:T_end/T /100 :T_end/T
+        figure(3)
+        q1 = qf(2*k-1);
+        q2 = qf(2*k);
+        x = zeros(2, 2);
+        x(:, 1) = [q1 ; 0];
+        x(:, 2) = x(:, 1) + L*[sin(q2); -cos(q2)];
+    
+        clf;
+        plot(x(1, :), x(2, :), 'o-');
+        hold on;
+        plot(x(1, 1), x(2, 1), 'square');
+        hold on;
+        plot([-10,10], [0,0], '-');
+        axis equal;
+        xlim([-2, 2]);
+        ylim([-1,1]);
+        drawnow;
+       frame = getframe(gcf);
+       writeVideo(v,frame);
+    end
+    close(v);
+
+elseif(simul)
+    figure(3*length(T_list)+1);
+    semilogx(T_list, loss_list);
+    xlabel("time step size, [s]");
+    ylabel("loss");
+    title('Euler integration');
+    save('./transfer_Euler/loss_list_Euler', 'loss_list');
+    save('./transfer_Euler/T_list_Euler', 'T_list');
+end
+
+%% Functions
+function [q, M, C, G] = forward(q_0,q_m, U, m, L, g, J, T, T_end)
+            % Forward simulation
+    q = zeros(2*T_end/T,1);
+    for k = 1:T_end/T
+        if k == 1
+            q(2*k-1:2*k) = solve_dynamics(q_0, q_m, [U(k);0], m, L, g, J, T);
+        elseif k == 2
+            q(2*k-1:2*k) = solve_dynamics(q(2*k-3:2*k-2), q_0, [U(k);0], m, L, g, J, T);
+        else
+            q(2*k-1:2*k) = solve_dynamics(q(2*k-3:2*k-2), q(2*k-5:2*k-4), [U(k);0], m, L, g,J, T);
+        end
+    % Calculate dynamics matrices
+        M(:, 2*k-1:2*k) = Mass(q(2*k-1:2*k), m, L, J);
+        if k == 1
+            C(:, 2*k-1:2*k) = Cori(q(2*k-1:2*k), (q(2*k-1:2*k)-q_0)/T,  m, L);
+        else
+            C(:, 2*k-1:2*k) = Cori(q(2*k-1:2*k), (q(2*k-1:2*k) - q(2*k-3:2*k-2))/T,  m, L);
+        end 
+        G(:, k) = Grav(q(2*k-1:2*k), m, L, g);
+    end
+end
+
+function f = ObjFunc(U, q_0, q_m, q_target, m, L, g, J, T, T_end) % objective function without gradient
+    % Calculate objective
+    % Forward simulation
+    if T <= 0.001
+        U_use = zeros(T_end / T, 1);
+        for i = 1:T_end/0.002
+          U_use((0.002/T * (i-1)+1) : (0.002/T*i) ) =  U(i);
+          [q, ~,~,~] = forward(q_0, q_m, U_use, m, L, g, J, T, T_end);
+        end
+    else
+        [q,~,~,~] = forward(q_0, q_m, U, m, L, g, J, T, T_end);
+    end
+    f = norm(q(2:2:end) - q_target(2) * ones(length(q)/2,1)) ;
+end
+
+function solve = solve_dynamics(q_0_, q_m_, u_, m_, L_, g_, J_, T_) % Forward simulation works well
+    m = Mass(q_0_, m_, L_, J_);
+    c = Cori(q_0_, (q_0_-q_m_)/T_, m_, L_);
+    dg = dg_dq(q_0_,m_, L_, g_);
+    solve = q_0_ + (m/T_+c+dg*T_)\(u_+m*(q_0_-q_m_)/T_^2 - Grav(q_0_, m_, L_, g_))*T_;
+end
+
+function v = Grav(q_, m_, L_, g_) % Gravity vector
+    v = [0; 
+        m_(2)*g_*L_*sin(q_(2))];
+end
+
+function m = Mass(q_, m_, L_, J_) % mass matrix
+    m = [m_(1)+m_(2), m_(2) * L_*cos(q_(2));
+        m_(2)*L_*cos(q_(2)), m_(2)*L_^2+J_];
+end
+
+function c = Cori(q_, v_, m_, L_)
+    c = [0 -m_(2)*L_*sin(q_(2))*v_(2);
+        0 0];
+end
+
+function dg = dg_dq(q_, m_, L_, g_) % Jacobian of the gravity vector
+    dg = [0, 0;
+        0, m_(2)*g_*L_*cos(q_(2))];
+end

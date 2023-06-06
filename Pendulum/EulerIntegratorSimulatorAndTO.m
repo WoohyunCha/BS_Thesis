@@ -4,8 +4,7 @@ clear all; close all ;clc;
 N = 2; % number of bodies
 T_end = 1; % simulation end time
 T = 0.100000; % Time interval
-% T_list = [0.5 0.3 0.2 0.1 0.06 0.05 0.04 0.03 0.02 0.01 0.008 0.006 0.005 0.004 0.003 0.002];
-T_list = [0.2 0.1 0.05 0.02 0.01 0.008 0.005 0.002];
+T_list = [0.1 0.05 0.02 0.01 0.008 0.004 0.002]; % step sizes to use for TO
 loss_list = [];
 
 %% Dynamics setting
@@ -27,97 +26,91 @@ q_0 = [pi/2;0]; % initial condition q(0)
 q_m = [pi/2;0]; % initial condition q(-1) -> v(0) = 0
 
 %% Simulation setting
-simul = true;
-
+simul = false;
+test = true;
 %% TO
-if simul == true
-    if ~exist('./transfer_euler/', 'dir')
-       mkdir('./transfer_euler/')
+if test
+    if ~exist('./test_euler/', 'dir')
+           mkdir('./test_euler/')
     end
-    T_simul = 0.0001;
-    U_simul = zeros(T_end/T_simul,1);
-    for j = 1:length(T_list)
-        T = T_list(j);
-        load(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T, T_end), 'U');
-        % load(sprintf('./inputs_euler/U_%f.mat', T), 'U');
-        for i = 1:T_end/T
-            U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) ;%* T_simul/T;
-        end
-        q_obj = zeros(2*T_end/T_simul,1); % Target
-        [qf, ~, ~, ~] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
-        loss = norm(qf(2*T_end/T_simul-1:2*T_end/T_simul) - q_obj(2*T_end/T_simul-1:2*T_end/T_simul));
-        % save(sprintf('./transfer_euler/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
-        % save(sprintf('./transfer_euler/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
-        save(sprintf('./transfer_euler/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
-        save(sprintf('./transfer_euler/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
-        loss_list = [loss_list, loss];
-    end
-else
-    if ~exist('./inputs_euler/', 'dir')
-       mkdir('./inputs_euler/')
-    end
-    for j = 1: length(T_list)
-        tic
-        U = zeros(T_end/T_list(j),1); % Torque input vector. [u1]
-        q_obj = zeros(2*T_end/T_list(j),1); % Target
-        options = optimoptions('fminunc', 'MaxFunctionEvaluations', 200000, 'display', 'off');
-        U = fminunc(@(U)ObjFunc(U, q_0, q_m,q_obj,r, m, L, g, J, T_list(j), T_end), U,options);
+    q_0 = [pi/2;0];
+    q_m = [pi/2;0];
+    for j = 1:length(T_list) 
+        % T_end = 20;
+        load(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T_list(j), T_end), 'U');
         U_simul = U;
         T_simul = T_list(j);
-        save(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T_list(j), T_end), 'U');
-        [qf, ~, ~, ~] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
-        toc
-        fprintf("TO done for h = %f\n", T_list(j));
+        [qf, M, C, G] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
+        fieldValue = [q_0;qf];
+        assignin('base', sprintf('q_%d', j), fieldValue);
+        save(sprintf('./test_euler/q_%f_endtime_%f.mat', T_list(j), T_end), sprintf('q_%d', j));
+    end
+    figure(1);
+    for j = 1:length(T_list)
+        t = 0:T_list(j):T_end;
+        q = eval(sprintf('q_%d', j));
+        plot(t, q(1:2:end));
+        hold on;
+    end
+    % ylim([1.2, 2.2]);
+    title("Trajectory, q1");
+    legend('h = 0.1', 'h = 0.05','h = 0.02','h = 0.01','h = 0.008','h = 0.005','h = 0.002')
+    saveas(gcf, sprintf('./test_euler/q1.jpg'));
+
+    figure(2);
+    for j = 1:length(T_list)
+        t = 0:T_list(j):T_end;
+        q = eval(sprintf('q_%d', j));
+        plot(t, q(2:2:end));
+        hold on;
+    end
+    % ylim([-1.6, -0.6]);
+    title("Trajectory, q2");
+    legend('h = 0.1', 'h = 0.05','h = 0.02','h = 0.01','h = 0.008','h = 0.005','h = 0.002')
+    saveas(gcf, sprintf('./test_euler/q2.jpg'));
+else
+    if simul == true
+        if ~exist('./transfer_euler/', 'dir')
+           mkdir('./transfer_euler/')
+        end
+        T_simul = 0.0001;
+        U_simul = zeros(T_end/T_simul,1);
+        for j = 1:length(T_list)
+            T = T_list(j);
+            load(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T, T_end), 'U');
+            % load(sprintf('./inputs_euler/U_%f.mat', T), 'U');
+            for i = 1:T_end/T
+                U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) ;%* T_simul/T;
+            end
+            q_obj = zeros(2*T_end/T_simul,1); % Target
+            [qf, ~, ~, ~] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
+            loss = norm(qf(2*T_end/T_simul-1:2*T_end/T_simul) - q_obj(2*T_end/T_simul-1:2*T_end/T_simul));
+            save(sprintf('./transfer_euler/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
+            save(sprintf('./transfer_euler/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
+            loss_list = [loss_list, loss];
+        end
+    else
+        if ~exist('./inputs_euler/', 'dir')
+           mkdir('./inputs_euler/')
+        end
+        for j = 1: length(T_list)
+            tic
+            U = zeros(T_end/T_list(j),1); % Torque input vector. [u1]
+            q_obj = zeros(2*T_end/T_list(j),1); % Target
+            options = optimoptions('fminunc', 'MaxFunctionEvaluations', 200000, 'display', 'off');
+            U = fminunc(@(U)ObjFunc(U, q_0, q_m,q_obj,r, m, L, g, J, T_list(j), T_end), U,options);
+            U_simul = U;
+            T_simul = T_list(j);
+            save(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T_list(j), T_end), 'U');
+            [qf, ~, ~, ~] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
+            save(sprintf('./inputs_euler/q_%f_endtime_%f.mat', T_list(j), T_end), 'qf');
+            toc
+            fprintf("TO done for h = %f\n", T_list(j));
+        end
     end
 end
-
 T = T_simul;
 %% Plot
-t = T:T:T_end;
-plot(t, qf(1:2:2*T_end/T-1));
-hold on;
-plot(t, q_obj(1:2:2*T_end/T-1));
-xlabel('time, [s]');
-ylabel('angle, [rad]');
-title('q_1');
-legend('real', 'target');
-figure(2)
-plot(t, qf(2:2:2*T_end/T));
-hold on;
-plot(t, q_obj(2:2:2*T_end/T));
-xlabel('time, [s]');
-ylabel('angle, [rad]');
-title('q_2');
-legend('real', 'target');
-
-v = VideoWriter(sprintf('Euler_%f_simultime_%f.avi', T, T_simul));
-open(v);
-for k = T_end/T /20:T_end/T /20 :T_end/T
-    figure(3)
-    q1 = qf(2*k-1);
-    q2 = qf(2*k);
-    x = zeros(2, 3);
-    x(:, 2) = L(1)*[sin(q1); -cos(q1)];
-    x(:, 3) = x(:, 2) + L(2)*[sin(q1+q2); -cos(q1+q2)];
-
-    clf;
-    plot(x(1, :), x(2, :), 'o-');
-    axis equal;
-    xlim([-1, 1]);
-    ylim([-2.5,2.5]);
-    drawnow;
-   frame = getframe(gcf);
-   writeVideo(v,frame);
-end
-close(v);
-
-figure(4)
-semilogx(T_list, loss_list);
-xlabel("time step size, [s]");
-ylabel("loss");
-title('Euler integration');
-save('./transfer_Euler/loss_list_Euler', 'loss_list');
-save('./transfer_Euler/T_list_Euler', 'T_list');
 
 %% Functions
 function [q, M, C, G] = forward(q_0,q_m, r, U, m, L, g, J, T, T_end)

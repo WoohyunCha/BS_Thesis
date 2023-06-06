@@ -13,7 +13,7 @@ clear all; close all; clc;
 N = 2; % number of bodies
 T_end = 1; % simulation end time
 
-T_list = [0.1 0.05 0.02 0.01 0.008 0.005 0.002]; % step sizes to use for TO
+T_list = [0.1 0.05 0.02 0.01 0.008 0.005 0.002];
 loss_list = [];
 
 %% Dynamics setting
@@ -28,11 +28,11 @@ L_ = L;
 J_ = J; 
 g_ = g;
 
-T_test = 0.01;
+T_test = 0.001;
 
 % Set modes
 test = false;
-simul = false; % false means solving TO to get optimal inputs under step sizes of T_list
+simul = true; % false means solving TO to get optimal inputs under step sizes of T_list
 video = false;
 fig = false;
 %% Initialize
@@ -42,10 +42,44 @@ q_m = [0;0]; % initial condition q(-1) -> v(0) = 0
 
 %% TO
 if test
-    U_simul = zeros(2*T_end/T_test, 1);
-    T_simul = T_test;
-    q_obj = zeros(2*T_end/T_simul,1); % Targe
-    qf = forward2(q_0, q_m, U_simul, T_simul, T_end);
+    if ~exist('./test_vi/', 'dir')
+       mkdir('./test_vi/')
+    end
+    q_0 = [0;0];
+    q_m = [0;0];
+    for j = 1:length(T_list) 
+        % T_end = 20;
+        load(sprintf('./inputs_vi/U_%f_endtime_%f.mat', T_list(j), T_end), 'U');  
+        U_simul= U;
+        T_simul = T_list(j);
+        qf = forward2(q_0,q_m, U_simul, T_simul, T_end);
+        fieldValue = [q_0;qf];
+        assignin('base', sprintf('q_%d', j), fieldValue);
+        save(sprintf('./test_vi/q_%f_endtime_%f.mat', T_list(j), T_end), sprintf('q_%d', j));
+        fprintf('Test done for h = %f\n', T_list(j));
+    end
+    figure(1);
+    for j = 1:length(T_list)
+        t = 0:T_list(j):T_end;
+        q = eval(sprintf('q_%d', j));
+        plot(t, q(1:2:end));
+        hold on;
+    end
+    title("Trajectory, q1");
+    legend('h = 0.05', 'h = 0.02', 'h = 0.01', 'h = 0.0008', 'h = 0.004','h = 0.002')
+    saveas(gcf, sprintf('./test_vi/q1.jpg'));
+
+    figure(2);
+    for j = 1:length(T_list)
+        t = 0:T_list(j):T_end;
+        q = eval(sprintf('q_%d', j));
+        plot(t, q(2:2:end));
+        hold on;
+    end
+    ylim([-1.5,0]);
+    title("Trajectory, q2");
+    legend('h = 0.05', 'h = 0.02', 'h = 0.01', 'h = 0.0008', 'h = 0.004','h = 0.002')
+    saveas(gcf, sprintf('./test_vi/q2.jpg'));
 else
     q_target = [0; pi];
     if simul == true
@@ -59,9 +93,10 @@ else
             T = T_list(j);
             load(sprintf('./inputs_vi/U_%f_endtime_%f.mat', T, T_end), 'U');
             for i = 1:T_end/T
-                U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) ;%* T_simul/T;
+                U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) * T_simul/T;
             end
             qf = forward2(q_0, q_m, U_simul, T_simul, T_end);
+            % load(sprintf('./transfer_vi/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
             loss = ((qf(2*T_end/T_simul-1:2*T_end/T_simul,1) - q_target)')*(qf(2*T_end/T_simul-1:2*T_end/T_simul) - q_target) ;
             save(sprintf('./transfer_vi/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
             save(sprintf('./transfer_vi/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
@@ -120,6 +155,7 @@ else
                 end
             end
         end
+        save('transfer_vi/loss_list_vi.mat', 'loss_list');
     else
         if ~exist('./inputs_vi/', 'dir')
            mkdir('./inputs_vi/')
@@ -133,6 +169,7 @@ else
             T_simul = T_list(j);
             save(sprintf('./inputs_vi/U_%f_endtime_%f.mat', T_list(j), T_end), 'U');
             qf = forward2(q_0,q_m, U_simul, T_simul, T_end);
+            save(sprintf('./inputs_vi/q_%f_endtime_%f.mat', T_list(j), T_end), 'qf');
             toc
             fprintf("TO done for h = %f\n", T_list(j));
             
@@ -192,58 +229,6 @@ end
 
 T = T_simul;
 %% Plot
-
-if test
-    t = T_test:T_test:T_end;
-    plot(t, qf(1:2:2*T_end/T_test-1));
-    hold on;
-    plot(t, q_obj(1:2:2*T_end/T_test-1));
-    xlabel('time, [s]');
-    ylabel('angle, [rad]');
-    title('q_1');
-    legend('real', 'target');
-    figure(2)
-    plot(t, qf(2:2:2*T_end/T_test));
-    hold on;
-    plot(t, q_obj(2:2:2*T_end/T_test));
-    xlabel('time, [s]');
-    ylabel('angle, [rad]');
-    title('q_2');
-    legend('real', 'target');
-    
-    v = VideoWriter(sprintf('VI_%f_simultime_%f.avi', T_test, T_simul));
-    open(v);
-    for k = T_end/T_test /100:T_end/T_test /100 :T_end/T_test
-        figure(3)
-        q1 = qf(2*k-1);
-        q2 = qf(2*k);
-        x = zeros(2, 2);
-        x(:, 1) = [q1 ; 0];
-        x(:, 2) = x(:, 1) + L*[sin(q2); -cos(q2)];
-    
-        clf;
-        plot(x(1, :), x(2, :), 'o-');
-        hold on;
-        plot(x(1, 1), x(2, 1), 'square');
-        hold on;
-        plot([-10,10], [0,0], '-');
-        axis equal;
-        xlim([-2, 2]);
-        ylim([-1,1]);
-        drawnow;
-       frame = getframe(gcf);
-       writeVideo(v,frame);
-    end
-    close(v);
-elseif (simul)
-        figure(3*length(T_list)+1)
-        semilogx(T_list, loss_list);
-        xlabel("time step size, [s]");
-        ylabel("loss");
-        title('vi integration');
-        save('./transfer_vi/loss_list_vi', 'loss_list');
-        save('./transfer_vi/T_list_vi', 'T_list');
-end
 
 %% Functions
 
