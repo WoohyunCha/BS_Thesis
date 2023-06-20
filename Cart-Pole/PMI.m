@@ -22,7 +22,7 @@ v_0 = [0;0]; % initial condition q(-1) -> v(0) = 0
 
 %% Simulation setting
 simul = false;
-test = true; % To check if integrator works properly. Free swing simulation
+test = false; % To check if integrator works properly. Free swing simulation
 video = false;
 fig = false;
 %% TO
@@ -245,7 +245,7 @@ function f = ObjFunc(U, q_0, q_m, q_target, m, L, g, J, T, T_end) % objective fu
     else
         [q,~,~,~] = forward(q_0, q_m, U, m, L, g, J, T, T_end);
     end
-    f = ((q(2*T_end/T-1:2*T_end/T,1) - q_target)')*(q(2*T_end/T-1:2*T_end/T) - q_target) ;
+    f = ((q(2*T_end/T-1:2*T_end/T,1) - q_target)')*(q(2*T_end/T-1:2*T_end/T) - q_target) + (1e-5)*norm(U)^2;
 end
 
 function [q,v] = solve_dynamics(q_0_, v_0_, u_, m_, L_, g_, J_, T_) % Forward simulation works well

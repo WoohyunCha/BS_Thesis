@@ -1,3 +1,4 @@
+
 clear all; close all ;clc;
 
 %% Simulation Settings
@@ -26,8 +27,10 @@ q_0 = [pi/2;0]; % initial condition q(0)
 q_m = [pi/2;0]; % initial condition q(-1) -> v(0) = 0
 
 %% Simulation setting
-simul = false;
-test = true;
+simul = true;
+test = false;
+fig = false;
+video = false;
 %% TO
 if test
     if ~exist('./test_euler/', 'dir')
@@ -69,6 +72,7 @@ if test
     legend('h = 0.1', 'h = 0.05','h = 0.02','h = 0.01','h = 0.008','h = 0.005','h = 0.002')
     saveas(gcf, sprintf('./test_euler/q2.jpg'));
 else
+    q_target = [0; 0];
     if simul == true
         if ~exist('./transfer_euler/', 'dir')
            mkdir('./transfer_euler/')
@@ -76,19 +80,73 @@ else
         T_simul = 0.0001;
         U_simul = zeros(T_end/T_simul,1);
         for j = 1:length(T_list)
+            tic
             T = T_list(j);
             load(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T, T_end), 'U');
-            % load(sprintf('./inputs_euler/U_%f.mat', T), 'U');
             for i = 1:T_end/T
                 U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) ;%* T_simul/T;
             end
-            q_obj = zeros(2*T_end/T_simul,1); % Target
-            [qf, ~, ~, ~] = forward(q_0,q_m, r, U_simul, m, L, g, J, T_simul, T_end);
-            loss = norm(qf(2*T_end/T_simul-1:2*T_end/T_simul) - q_obj(2*T_end/T_simul-1:2*T_end/T_simul));
+            qf = forward(q_0, q_m, r, U_simul, m, L, g, J, T_simul, T_end);
+            loss = ((qf(2*T_end/T_simul-1:2*T_end/T_simul,1) - q_target)')*(qf(2*T_end/T_simul-1:2*T_end/T_simul) - q_target) ;
             save(sprintf('./transfer_euler/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
             save(sprintf('./transfer_euler/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
             loss_list = [loss_list, loss];
+            toc
+            fprintf("Simulation done for h = %f\n", T_list(j));
+            
+            scale = (T_end/T_simul)/100;
+            t = T_simul*scale:T_simul*scale:T_end;
+            if (fig) 
+                figure(3*j-2);
+            else
+                figure('visible','off');
+            end
+            plot(t, qf(2*scale-1:2*scale:2*T_end/T_simul-1));
+            hold on;
+            plot(t, q_target(1) * ones(length(t)));
+            xlabel('time, [s]');
+            ylabel('angle, [rad]');
+            title('q_1');
+            legend('real', 'target');
+            saveas(gcf, sprintf('./transfer_euler/q1_%f_endtime_%f.jpg', T, T_end));
+            if (fig) 
+                figure(3*j-1);
+            else
+                figure('visible','off');
+            end
+            plot(t, qf(2*scale:2*scale:2*T_end/T_simul));
+            hold on;
+            plot(t, q_target(2) * ones(length(t)));
+            xlabel('time, [s]');
+            ylabel('angle, [rad]');
+            title('q_2');
+            legend('real', 'target');
+            saveas(gcf, sprintf('./transfer_euler/q2_%f_endtime_%f.jpg', T, T_end))
+            if (video)
+                for k = scale :scale :T_end/T_simul
+                    figure(3*j)
+                    q1 = qf(2*k-1);
+                    q2 = qf(2*k);
+                    x = zeros(2, 2);
+                    x(:, 1) = [q1 ; 0];
+                    x(:, 2) = x(:, 1) + L*[sin(q2); -cos(q2)];
+                
+                    clf;
+                    plot(x(1, :), x(2, :), 'o-');
+                    hold on;
+                    plot(x(1, 1), x(2, 1), 'square');
+                    hold on;
+                    plot([-10,10], [0,0], '-');
+                    axis equal;
+                    xlim([-2, 2]);
+                    ylim([-1,1]);
+                    drawnow;
+                    frame = getframe(gcf);
+                end
+            end
         end
+        save('transfer_euler/loss_list_euler.mat', 'loss_list');
+        save('transfer_euler/T_list_euler.mat', 'T_list');
     else
         if ~exist('./inputs_euler/', 'dir')
            mkdir('./inputs_euler/')

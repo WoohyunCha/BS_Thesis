@@ -12,12 +12,14 @@ load('./transfer_pmi/loss_list_PMI.mat', 'loss_list');
 T_list_P = T_list;
 loss_list_P = loss_list;
 
-semilogx(T_list_V,loss_list_V);
+semilogx(T_list_V,loss_list_V, 'linewidth', 3);
 hold on;
-semilogx(T_list_E, loss_list_E);
+semilogx(T_list_E, loss_list_E, 'linewidth', 3);
 hold on;
-semilogx(T_list_P, loss_list_P);
+semilogx(T_list_P, loss_list_P, 'linewidth', 3);
 legend('variational', 'Euler', 'PMI');
 xlabel('time step size, [s]');
 ylabel('loss');
 hold on;
+title('Input transfer in double pendulum problem');
+ylim([0, 0.01])

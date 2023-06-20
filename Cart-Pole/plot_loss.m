@@ -12,13 +12,14 @@ load('./transfer_pmi/loss_list_PMI.mat', 'loss_list');
 T_list_P = T_list;
 loss_list_P = loss_list;
 
-semilogx(T_list_V(2:end),loss_list_V(2:end));
+semilogx(T_list_V(2:end),loss_list_V(2:end), 'linewidth', 3);
 hold on;
-semilogx(T_list_E(2:end), loss_list_E(2:end));
+semilogx(T_list_E(2:end), loss_list_E(2:end), 'linewidth', 3);
 hold on;
-semilogx(T_list_P(2:end), loss_list_P(2:end));
+semilogx(T_list_P(2:end), loss_list_P(2:end), 'linewidth', 3);
 legend('variational', 'Euler', 'PMI');
 xlabel('time step size, [s]');
 ylabel('loss');
 ylim([0, 0.1]);
+title('Input transfer in cart pole problem');
 hold on;
