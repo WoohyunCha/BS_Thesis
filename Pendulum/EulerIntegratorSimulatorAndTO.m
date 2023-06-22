@@ -77,17 +77,17 @@ else
         if ~exist('./transfer_euler/', 'dir')
            mkdir('./transfer_euler/')
         end
-        T_simul = 0.0001;
-        U_simul = zeros(T_end/T_simul,1);
+        T_simul = 0.00001;
+        U_simul = zeros(int64(T_end/T_simul),1);
         for j = 1:length(T_list)
             tic
             T = T_list(j);
             load(sprintf('./inputs_euler/U_%f_endtime_%f.mat', T, T_end), 'U');
             for i = 1:T_end/T
-                U_simul((T/T_simul * (i-1)+1) : (T/T_simul*i) ) = U(i) ;%* T_simul/T;
+                U_simul(int64(T/T_simul) * (i-1)+1 : int64(T/T_simul)*i ) = U(i) ;%* T_simul/T;
             end
             qf = forward(q_0, q_m, r, U_simul, m, L, g, J, T_simul, T_end);
-            loss = ((qf(2*T_end/T_simul-1:2*T_end/T_simul,1) - q_target)')*(qf(2*T_end/T_simul-1:2*T_end/T_simul) - q_target) ;
+            loss = ((qf(end-1:end,1) - q_target)')*(qf(end-1:end, 1) - q_target) ;
             save(sprintf('./transfer_euler/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
             save(sprintf('./transfer_euler/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
             loss_list = [loss_list, loss];
@@ -101,7 +101,7 @@ else
             else
                 figure('visible','off');
             end
-            plot(t, qf(2*scale-1:2*scale:2*T_end/T_simul-1));
+            plot(t, qf(2*int64(scale)-1:2*int64(scale):end));
             hold on;
             plot(t, q_target(1) * ones(length(t)));
             xlabel('time, [s]');
@@ -114,7 +114,7 @@ else
             else
                 figure('visible','off');
             end
-            plot(t, qf(2*scale:2*scale:2*T_end/T_simul));
+            plot(t, qf(2*int64(scale):2*int64(scale):end));
             hold on;
             plot(t, q_target(2) * ones(length(t)));
             xlabel('time, [s]');
@@ -124,6 +124,7 @@ else
             saveas(gcf, sprintf('./transfer_euler/q2_%f_endtime_%f.jpg', T, T_end))
             if (video)
                 for k = scale :scale :T_end/T_simul
+                    k = int64(k);
                     figure(3*j)
                     q1 = qf(2*k-1);
                     q2 = qf(2*k);
@@ -173,8 +174,8 @@ T = T_simul;
 %% Functions
 function [q, M, C, G] = forward(q_0,q_m, r, U, m, L, g, J, T, T_end)
             % Forward simulation
-    q = zeros(2*T_end/T,1);
-    for k = 1:T_end/T
+    q = zeros(2*int64(T_end/T),1);
+    for k = 1:int64(T_end/T)
         if k == 1
             q(2*k-1:2*k) = solve_dynamics(q_0, q_m,r, [U(k);0], m, L, g, J, T);
         elseif k == 2
@@ -212,7 +213,7 @@ function solve = solve_dynamics(q_0_, q_m_,r_, u_, m_, L_, g_, J_, T_) % Forward
     m = Mass(q_0_,r_, m_, L_, J_);
     c = Cori(q_0_, (q_0_-q_m_)/T_,r_, m_, L_);
     dg = dg_dq(q_0_, r_,m_, L_, g_);
-    solve = q_0_ + (m/T_+c+dg*T_)\(u_+m*(q_0_-q_m_)/T_^2 - Grav(q_0_, r_, m_, L_, g_))*T_;
+    solve = q_0_ + (m/T_+c)\(u_+m*(q_0_-q_m_)/T_^2 - Grav(q_0_, r_, m_, L_, g_))*T_;
     % solve =  (m/T_^2 + c/T_ )\(u_+(2*m/T_^2 + c/T_)*q_0_-m/T_^2*q_m_-Grav(q_0_,r_, m_, L_, g_));
 end
 
