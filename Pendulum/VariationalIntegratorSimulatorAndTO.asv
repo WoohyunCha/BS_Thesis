@@ -31,12 +31,11 @@ J_ = J;
 g_ = g;
 
 
-% For simulation only
-T_simul = 0.00001; % Time step size of main simulation
-simul = true; % false means solvariationalng TO to get optimal inputs under step sizes of T_list
-test = false;
-fig = false;
-video = false;
+simul = true; % false means solving variational TO to get optimal inputs under step sizes of T_list
+                % True means input transfer
+test = false; % To test if the integrator works
+fig = false; % To visualize plot
+video = false; % To visulaize video
 %% Initialize
 % initial conditions, q(-1) and q(0)
 q_0 = [pi/2;0]; % initial condition q(0)
@@ -50,7 +49,6 @@ if test
     q_0 = [pi/2;0];
     q_m = [pi/2;0];
     for j = 1:length(T_list) 
-        % T_end = 20;
         load(sprintf('./inputs_variational/U_%f.mat', T_list(j)), 'U');
         U_simul = U;
         T_simul = T_list(j);
@@ -86,7 +84,7 @@ else
         if ~exist('./transfer_variational/', 'dir')
            mkdir('./transfer_variational/')
         end
-        T_simul = 0.00001;
+        T_simul = 0.00001; % Time step size of 'real world' simulation model
         U_simul = zeros(int64(T_end/T_simul),1);
         for j = 1:length(T_list)
             tic
@@ -96,7 +94,6 @@ else
                 U_simul(int64(T/T_simul * (i-1)+1) : int64(T/T_simul*i) ) = U(i) * T_simul/T;
             end
             qf = forward2(q_0, q_m, U_simul, T_simul, T_end);
-            % load(sprintf('./transfer_variational/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
             loss = ((qf(end-1:end) - q_target)')*(qf(end-1:end) - q_target) ;
             save(sprintf('./transfer_variational/q_%f_siumultime_%f_endtime_%f.mat', T, T_simul, T_end), 'qf');
             save(sprintf('./transfer_variational/loss_%f_simultime_%f_endtime_%f.mat', T, T_simul, T_end), 'loss');
