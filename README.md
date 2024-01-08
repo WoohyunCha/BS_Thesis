@@ -1,6 +1,6 @@
 ﻿# TO_integration_scheme
 
-Code for my thesis.
+Code for my thesis.'\n'
 I compared the time-step-size-consistency of various integrators in Trajectory Optimization (TO) problems.
 Integrators of superior time-step-size-consistency are exepcted to perform well in sim-to-real transfer.
 Experiments were conducted on the cartpole swing up problem, and the underactuated double pendulum problem.
